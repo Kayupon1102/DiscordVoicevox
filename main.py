@@ -26,7 +26,6 @@ class FFmpegPCMAudio(discord.AudioSource):
             args.extend(shlex.split(options))
         args.append('pipe:1')
         self._process = None
-        self._frame_byte_size = Encoder.FRAME_SIZE * 4
         try:
             self._process = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr)
             self._stdout = io.BytesIO(
@@ -37,8 +36,8 @@ class FFmpegPCMAudio(discord.AudioSource):
         except subprocess.SubprocessError as exc:
             raise discord.ClientException('Popen failed: {0.__class__.__name__}: {0}'.format(exc)) from exc
     def read(self):
-        ret = self._stdout.read(self._frame_byte_size)
-        if len(ret) != self._frame_byte_size:
+        ret = self._stdout.read(Encoder.FRAME_SIZE)
+        if len(ret) != Encoder.FRAME_SIZE:
             return b''
         return ret
     def cleanup(self):
