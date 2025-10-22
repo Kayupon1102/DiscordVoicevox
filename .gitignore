@@ -1,0 +1,6 @@
+*.json
+
+*.zip
+.vscode/
+open_jtalk**/
+voicevox_core/**
