@@ -53,7 +53,8 @@ class FFmpegPCMAudio(discord.AudioSource):
 
 client = discord.Client(intents=discord.Intents.all())
 tree = app_commands.CommandTree(client)
-guilds = []
+guild_ids: list[int] = []
+guild_objects: list[discord.Object] = []
 voiceSource: dict[str,list] = {}
 wordDictionary: dict[str,dict[str,str]] = {}
 patternDictionary: dict[str,dict[str,Pattern]] = {}
@@ -124,8 +125,10 @@ with open("botSetting.json") as f:
     string = f.read()
     if string != "":
         botSetting = json.loads(string)
-        for id in botSetting["guildIDs"]:
-            guilds.append(discord.Object(id=id))
+        for raw_id in botSetting["guildIDs"]:
+            guild_id = int(raw_id)
+            guild_ids.append(guild_id)
+            guild_objects.append(discord.Object(id=guild_id))
 
 with open("userSetting.json") as f:
     string = f.read()
@@ -146,7 +149,7 @@ with open("dict.json") as f:
 
 core = voicevox_core.VoicevoxCore(open_jtalk_dict_dir=Path(botSetting["jtalkPath"]))
 
-@app_commands.guilds(*guilds)
+@app_commands.guilds(*guild_ids)
 @tree.command(
     name="texvoice",
     description="Voiceの選択"
@@ -179,7 +182,7 @@ async def setSpeakerID(ctx: discord.Interaction, voiceid: str = None):
             f.write(json.dumps(userSetting))
 
 
-@app_commands.guilds(*guilds)
+@app_commands.guilds(*guild_ids)
 @tree.command(
     name="join",
     description="TextVoiceを通話に参加させます。"
@@ -195,7 +198,7 @@ async def join(ctx: discord.Interaction):
     await ctx.user.voice.channel.connect(timeout=10)
     await ctx.response.send_message("接続しました。",ephemeral=True)
 
-@app_commands.guilds(*guilds)
+@app_commands.guilds(*guild_ids)
 @tree.command(
     name="left",
     description="TextVoiceを通話から切断します。"
@@ -210,7 +213,7 @@ async def left(ctx: discord.Interaction):
     await ctx.guild.voice_client.disconnect()
     await ctx.response.send_message("切断しました。",ephemeral=True)
 
-@app_commands.guilds(*guilds)
+@app_commands.guilds(*guild_ids)
 @tree.command(
     name="speakerlist",
     description="話者IDの一覧を表示します。"
@@ -218,7 +221,7 @@ async def left(ctx: discord.Interaction):
 async def speakerList(ctx:discord.Interaction):
     await ctx.response.send_message(f"```\n{speakerIDList()}\n```",ephemeral=True)
 
-@app_commands.guilds(*guilds)
+@app_commands.guilds(*guild_ids)
 @tree.command(
     name="dictionary",
     description="辞書に登録、削除ができます。"
@@ -258,7 +261,7 @@ async def dictionary(ctx:discord.Interaction, key:str, value:str = None):
         f.write(json.dumps(wordDictionary))
 
 #dictionaryの一覧を返信するコマンド
-@app_commands.guilds(*guilds)
+@app_commands.guilds(*guild_ids)
 @tree.command(
     name="dictlist",
     description="辞書の一覧を表示します。"
@@ -281,7 +284,7 @@ async def on_ready() -> None:
 
     # 1) ギルド同期（開発用: 即反映）
     total_guild_synced = 0
-    for g in guilds:
+    for g in guild_objects:
         try:
             synced = await tree.sync(guild=g)
             print(f"[guild {g.id}] synced: {[c.qualified_name for c in synced]}")
@@ -289,8 +292,8 @@ async def on_ready() -> None:
         except discord.HTTPException as e:
             print(f"Failed to sync commands for guild {getattr(g, 'id', '?')}: {e}")
 
-    # 2) グローバル同期（guilds が空、またはグローバルも使いたい時）
-    if not guilds:
+    # 2) グローバル同期（指定ギルドが空、またはグローバルも使いたい時）
+    if not guild_objects:
         global_synced = await tree.sync()
         print(f"[global] synced: {[c.qualified_name for c in global_synced]}")
 
@@ -298,9 +301,9 @@ async def on_ready() -> None:
     guild_cmds = []
     try:
         # 任意のギルドで確認（開発ギルドがあるならそれで）
-        if guilds:
-            guild_cmds = await tree.fetch_commands(guild=guilds[0])
-            print(f"[fetch guild {guilds[0].id}] {len(guild_cmds)} cmds: {[c.qualified_name for c in guild_cmds]}")
+        if guild_objects:
+            guild_cmds = await tree.fetch_commands(guild=guild_objects[0])
+            print(f"[fetch guild {guild_objects[0].id}] {len(guild_cmds)} cmds: {[c.qualified_name for c in guild_cmds]}")
         global_cmds = await tree.fetch_commands()
         print(f"[fetch global] {len(global_cmds)} cmds: {[c.qualified_name for c in global_cmds]}")
     except Exception as e:
