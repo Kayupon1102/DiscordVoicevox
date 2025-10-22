@@ -52,8 +52,8 @@ class FFmpegPCMAudio(discord.AudioSource):
 
 client = discord.Client(intents=discord.Intents.all())
 tree = app_commands.CommandTree(client)
-guilds = []
-voiceClient: dict[str,discord.VoiceClient] = {}
+guild_ids: list[int] = []
+guild_objects: list[discord.Object] = []
 voiceSource: dict[str,list] = {}
 wordDictionary: dict[str,dict[str,str]] = {}
 patternDictionary: dict[str,dict[str,Pattern]] = {}
@@ -124,8 +124,10 @@ with open("botSetting.json") as f:
     string = f.read()
     if string != "":
         botSetting = json.loads(string)
-        for id in botSetting["guildIDs"]:
-            guilds.append(discord.Object(id=id))
+        for raw_id in botSetting["guildIDs"]:
+            guild_id = int(raw_id)
+            guild_ids.append(guild_id)
+            guild_objects.append(discord.Object(id=guild_id))
 
 with open("userSetting.json") as f:
     string = f.read()
@@ -146,11 +148,11 @@ with open("dict.json") as f:
 
 core = voicevox_core.VoicevoxCore(open_jtalk_dict_dir=Path(botSetting["jtalkPath"]))
 
-@tree.command(
-    guilds=guilds,
+@app_commands.command(
     name="texvoice",
-    description="Voiceの選択" 
+    description="Voiceの選択"
 )
+@app_commands.guilds(*guild_ids)
 async def setSpeakerID(ctx: discord.Interaction, voiceid: str = None):
     userid = str(ctx.user.id)
     guildid = str(ctx.guild_id)
@@ -179,23 +181,27 @@ async def setSpeakerID(ctx: discord.Interaction, voiceid: str = None):
             f.write(json.dumps(userSetting))
 
 
-@tree.command(
-    guilds=guilds,
+@app_commands.command(
     name="join",
     description="TextVoiceを通話に参加させます。"
 )
+@app_commands.guilds(*guild_ids)
 async def join(ctx: discord.Interaction):
     if ctx.user.voice is None:
         await ctx.response.send_message("あなたはVoiceチャンネルに接続していません。",ephemeral=True)
         return
-    voiceClient[str(ctx.guild_id)] = await ctx.user.voice.channel.connect(timeout=10)
+    if ctx.guild.voice_client is not None:
+        await ctx.response.send_message("私は既にVoiceチャンネルに接続しています。",ephemeral=True)
+        return
+    voiceSource.setdefault(str(ctx.guild_id), [])
+    await ctx.user.voice.channel.connect(timeout=10)
     await ctx.response.send_message("接続しました。",ephemeral=True)
 
-@tree.command(
-    guilds=guilds,
+@app_commands.command(
     name="left",
-    description="TextVoiceを通話から切断します。" 
+    description="TextVoiceを通話から切断します。"
 )
+@app_commands.guilds(*guild_ids)
 async def left(ctx: discord.Interaction):
     if ctx.guild.voice_client is None:
         await ctx.response.send_message("私はVoiceチャンネルに接続していません。",ephemeral=True)
@@ -206,34 +212,37 @@ async def left(ctx: discord.Interaction):
     await ctx.guild.voice_client.disconnect()
     await ctx.response.send_message("切断しました。",ephemeral=True)
 
-@tree.command(
-    guilds=guilds,
+@app_commands.command(
     name="speakerlist",
     description="話者IDの一覧を表示します。"
 )
+@app_commands.guilds(*guild_ids)
 async def speakerList(ctx:discord.Interaction):
     await ctx.response.send_message(f"```\n{speakerIDList()}\n```",ephemeral=True)
 
-@tree.command(
-    guilds=guilds,
+@app_commands.command(
     name="dictionary",
     description="辞書に登録、削除ができます。"
 )
+@app_commands.guilds(*guild_ids)
 async def dictionary(ctx:discord.Interaction, key:str, value:str = None):
     guildid = str(ctx.guild.id)
 
-    if ctx.channel_id not in botSetting["channelIDs"]:
+    if ctx.channel_id not in botSetting.get("channelIDs", []):
         await ctx.response.send_message("このチャンネルでは使用できません。",ephemeral=True)
+        return
 
     if guildid not in wordDictionary:
         wordDictionary[guildid] = {}
-        patternDictionary[guildID] = {}
+    if guildid not in patternDictionary:
+        patternDictionary[guildid] = {}
 
     if value is None:
         if key not in wordDictionary[guildid]:
             await ctx.response.send_message(f"`{key}`は登録されていません。")
         else:
             del wordDictionary[guildid][key]
+            patternDictionary[guildid].pop(key, None)
             await ctx.response.send_message(f"`{key}`を削除しました。")
     else:
         if re.match("^[ぁ-んァ-ンー　\s]+$", value):
@@ -242,7 +251,7 @@ async def dictionary(ctx:discord.Interaction, key:str, value:str = None):
                 wordDictionary[guildid][key] = value
                 await ctx.response.send_message(f"`{key}`は`{value}`と発音されます。")
             except re.error:
-                ctx.response.send_message(f"`{key}` に構文エラーがあります。")
+                await ctx.response.send_message(f"`{key}` に構文エラーがあります。")
                 return
         else:
             await ctx.response.send_message(f"`{value}`<<<読み方には平仮名か片仮名のみが指定できます。")
@@ -251,11 +260,11 @@ async def dictionary(ctx:discord.Interaction, key:str, value:str = None):
         f.write(json.dumps(wordDictionary))
 
 #dictionaryの一覧を返信するコマンド
-@tree.command(
-    guilds=guilds,
+@app_commands.command(
     name="dictlist",
     description="辞書の一覧を表示します。"
 )
+@app_commands.guilds(*guild_ids)
 async def dictList(ctx:discord.Interaction):
     guildid = str(ctx.guild.id)
     if guildid not in wordDictionary:
@@ -266,45 +275,53 @@ async def dictList(ctx:discord.Interaction):
         dictString += f"{key} : {wordDictionary[guildid][key]}\n"
     dictString += "```"
     await ctx.response.send_message(dictString,ephemeral=True)
-    
+
+
+for command in (setSpeakerID, join, left, speakerList, dictionary, dictList):
+    tree.add_command(command)
+
 
 @client.event
 async def on_ready() -> None:
     print("on_ready", discord.__version__)
 
+    registered = [cmd.name for cmd in tree.get_commands()]
+    print(f"[tree] registered commands: {registered}")
+
     # 1) ギルド同期（開発用: 即反映）
     total_guild_synced = 0
-    for g in guilds:
+    for g in guild_objects:
         try:
             synced = await tree.sync(guild=g)
-            print(f"[guild {g.id}] synced: {[c.qualified_name for c in synced]}")
+            print(f"[guild {g.id}] synced: {[getattr(c, 'name', repr(c)) for c in synced]}")
             total_guild_synced += len(synced)
         except discord.HTTPException as e:
             print(f"Failed to sync commands for guild {getattr(g, 'id', '?')}: {e}")
 
-    # 2) グローバル同期（guilds が空、またはグローバルも使いたい時）
-    if not guilds:
+    # 2) グローバル同期（指定ギルドが空、またはグローバルも使いたい時）
+    if not guild_objects:
         global_synced = await tree.sync()
-        print(f"[global] synced: {[c.qualified_name for c in global_synced]}")
+        print(f"[global] synced: {[getattr(c, 'name', repr(c)) for c in global_synced]}")
 
     # 参考: 何が登録されているか必ずログ
     guild_cmds = []
     try:
         # 任意のギルドで確認（開発ギルドがあるならそれで）
-        if guilds:
-            guild_cmds = await tree.fetch_commands(guild=guilds[0])
-            print(f"[fetch guild {guilds[0].id}] {len(guild_cmds)} cmds: {[c.qualified_name for c in guild_cmds]}")
+        if guild_objects:
+            guild_cmds = await tree.fetch_commands(guild=guild_objects[0])
+            print(f"[fetch guild {guild_objects[0].id}] {len(guild_cmds)} cmds: {[getattr(c, 'name', repr(c)) for c in guild_cmds]}")
         global_cmds = await tree.fetch_commands()
-        print(f"[fetch global] {len(global_cmds)} cmds: {[c.qualified_name for c in global_cmds]}")
+        print(f"[fetch global] {len(global_cmds)} cmds: {[getattr(c, 'name', repr(c)) for c in global_cmds]}")
     except Exception as e:
         print("fetch_commands failed:", e)
 
 
 def playPop(message: discord.message,channel: discord.VoiceClient):
     guildid = str(channel.guild.id)
-    if len(voiceSource[guildid]) == 0:
+    queue = voiceSource.get(guildid)
+    if not queue:
         return
-    source = voiceSource[guildid].pop(0)
+    source = queue.pop(0)
     channel.play(source,after=lambda e:playPop(message,channel))
     return
 
@@ -322,21 +339,26 @@ async def on_message(message: discord.Message):
     if message.author.bot:
         return
 
-    if message.guild.voice_client is None:
+    if message.guild is None:
         return
-    
+
+    voice_client = message.guild.voice_client
+    if voice_client is None:
+        return
+
     guildid = str(message.guild.id)
 
-    if str(message.author.id) not in userSetting[guildid]:
+    guild_setting = userSetting.get(guildid)
+    if guild_setting is None or str(message.author.id) not in guild_setting:
         return
 
-    if message.channel.id not in botSetting["channelIDs"]:
+    if message.channel.id not in botSetting.get("channelIDs", []):
         return
 
     if message.author.voice is None:
         return
     
-    speakerid = int(userSetting[guildid][str(message.author.id)]["voiceid"])
+    speakerid = int(guild_setting[str(message.author.id)]["voiceid"])
     
 
     content = message.clean_content
@@ -368,9 +390,10 @@ async def on_message(message: discord.Message):
     wav = core.tts(text=content,speaker_id=speakerid)
     hoge = FFmpegPCMAudio(wav,pipe = True,stderr= sys.stderr)
     
-    voiceSource[guildid].append(hoge)
-    if voiceClient[guildid].is_playing():
+    queue = voiceSource.setdefault(guildid, [])
+    queue.append(hoge)
+    if voice_client.is_playing():
         return
-    playPop(message,voiceClient[guildid])
+    playPop(message, voice_client)
 
 client.run(botSetting["token"])
