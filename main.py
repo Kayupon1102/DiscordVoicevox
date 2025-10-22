@@ -149,11 +149,11 @@ with open("dict.json") as f:
 
 core = voicevox_core.VoicevoxCore(open_jtalk_dict_dir=Path(botSetting["jtalkPath"]))
 
-@app_commands.guilds(*guild_ids)
 @tree.command(
     name="texvoice",
     description="Voiceの選択"
 )
+@app_commands.guilds(*guild_ids)
 async def setSpeakerID(ctx: discord.Interaction, voiceid: str = None):
     userid = str(ctx.user.id)
     guildid = str(ctx.guild_id)
@@ -182,11 +182,11 @@ async def setSpeakerID(ctx: discord.Interaction, voiceid: str = None):
             f.write(json.dumps(userSetting))
 
 
-@app_commands.guilds(*guild_ids)
 @tree.command(
     name="join",
     description="TextVoiceを通話に参加させます。"
 )
+@app_commands.guilds(*guild_ids)
 async def join(ctx: discord.Interaction):
     if ctx.user.voice is None:
         await ctx.response.send_message("あなたはVoiceチャンネルに接続していません。",ephemeral=True)
@@ -198,11 +198,11 @@ async def join(ctx: discord.Interaction):
     await ctx.user.voice.channel.connect(timeout=10)
     await ctx.response.send_message("接続しました。",ephemeral=True)
 
-@app_commands.guilds(*guild_ids)
 @tree.command(
     name="left",
     description="TextVoiceを通話から切断します。"
 )
+@app_commands.guilds(*guild_ids)
 async def left(ctx: discord.Interaction):
     if ctx.guild.voice_client is None:
         await ctx.response.send_message("私はVoiceチャンネルに接続していません。",ephemeral=True)
@@ -213,19 +213,19 @@ async def left(ctx: discord.Interaction):
     await ctx.guild.voice_client.disconnect()
     await ctx.response.send_message("切断しました。",ephemeral=True)
 
-@app_commands.guilds(*guild_ids)
 @tree.command(
     name="speakerlist",
     description="話者IDの一覧を表示します。"
 )
+@app_commands.guilds(*guild_ids)
 async def speakerList(ctx:discord.Interaction):
     await ctx.response.send_message(f"```\n{speakerIDList()}\n```",ephemeral=True)
 
-@app_commands.guilds(*guild_ids)
 @tree.command(
     name="dictionary",
     description="辞書に登録、削除ができます。"
 )
+@app_commands.guilds(*guild_ids)
 async def dictionary(ctx:discord.Interaction, key:str, value:str = None):
     guildid = str(ctx.guild.id)
 
@@ -261,11 +261,11 @@ async def dictionary(ctx:discord.Interaction, key:str, value:str = None):
         f.write(json.dumps(wordDictionary))
 
 #dictionaryの一覧を返信するコマンド
-@app_commands.guilds(*guild_ids)
 @tree.command(
     name="dictlist",
     description="辞書の一覧を表示します。"
 )
+@app_commands.guilds(*guild_ids)
 async def dictList(ctx:discord.Interaction):
     guildid = str(ctx.guild.id)
     if guildid not in wordDictionary:
@@ -281,6 +281,9 @@ async def dictList(ctx:discord.Interaction):
 @client.event
 async def on_ready() -> None:
     print("on_ready", discord.__version__)
+
+    registered = [cmd.qualified_name for cmd in tree.walk_commands()]
+    print(f"[tree] registered commands: {registered}")
 
     # 1) ギルド同期（開発用: 即反映）
     total_guild_synced = 0
